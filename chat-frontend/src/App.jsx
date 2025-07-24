@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 
 function App() {
-  const [messages, setMessages] = useState([
-    { role: 'system', content: 'You are a helpful assistant.' },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messageEndRef = useRef(null);
@@ -21,7 +19,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'mistral',
+          model: 'tcfd-mistral',
           messages: newMessages,
         }),
       });
