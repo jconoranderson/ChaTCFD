@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from textstat import flesch_kincaid_grade
 
 # ───────── Llama-Index for RAG ─────────
-from llama_index.core import (        # ← NEW
+from llama_index.core import (       
     StorageContext,
     load_index_from_storage,
 )
