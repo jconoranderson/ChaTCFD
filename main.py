@@ -34,7 +34,6 @@ from fastapi.staticfiles import StaticFiles
 
 # ───────── FASTAPI bootstrap ──────────
 app = FastAPI()
-app.mount("/", StaticFiles(directory="dist", html=True), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -156,7 +155,7 @@ def chat_with_model(req: ChatRequest):
     try:
         messages, src_nodes = inject_context(req.messages)
         payload = {
-            "model":   "tcfd-mistral",
+            "model":   "mistral",
             "messages": messages,
             "stream":   False
         }

@@ -21,10 +21,10 @@ fi
 
 # 3. Create virtual environment
 echo "Creating virtual environment..."
-python3 -m venv ChaTCFD
+python3 -m venv venvChaTCFD
 
 # 4. Activate virtual environment
-source ChaTCFD/bin/activate
+source venvChaTCFD/bin/activate
 
 # 5. Upgrade pip
 echo "Upgrading pip..."
@@ -32,7 +32,7 @@ pip install --upgrade pip
 
 # 6. Install dependencies
 echo "Installing dependencies..."
-pip install fastapi uvicorn pydantic requests
+pip install fastapi uvicorn pydantic requests textstat llama-index-embeddings-ollama
 
 # 7. Create .env example (optional)
 if [ ! -f ".env" ]; then

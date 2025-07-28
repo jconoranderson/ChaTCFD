@@ -1,15 +1,17 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,jsx}",
-  ],
+  darkMode: 'class',
+  content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+      },
       colors: {
-        tcfdorange: "#F7931E", // Custom TCFD orange
+        primary: '#F7931E', // blue-600
+        secondary: '#1e293b', // slate-800
       },
     },
   },
   plugins: [],
-}
+};
