@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Node / React
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+backend/.venv/
+venv/
+.env
+
+# Build artifacts
+*.log
+*.sqlite3
+*.db
+
+# IDE metadata
+.vscode/
+.idea/
+
+# Local config
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# Training dada 
+*.txt
