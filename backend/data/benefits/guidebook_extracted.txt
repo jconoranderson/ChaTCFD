@@ -1,0 +1,33 @@
+Behefits Handbook 2025-2026
+
+CONTENTS & CONTACT INFORMATION
+
+HEALTH 
+
+Medical/Health Insurance: {
+    Provider Name: IBA - International Benefits Administrators
+    Provider Phone Number: (878)222-4409
+    Provider Website: https://ibatpa.healthspace.net/Logon/
+    Tier 1 Benefit Network: Northwell Direct
+    Tier 2 Benefit Network: Anthem BCBS 
+    Prescription Drug Coverage: EmpiRx
+    For primary care you should use your Tier 1 Benefit
+}. 
+
+(HRA) Health Reimbursement Arrangement: {
+    Provider Name: Isolved Benefit Service
+    Provider Phone Number: (866)370-3040
+    Provider Website: https://www.isolvedhcm.com/login/benefits 
+}
+
+Dental: {
+    Provider Name: Delta Dental (PPO Plan)
+    Provider Phone Number: (800)932-0783
+    Provider Website: https://www1.deltadentalins.com/ 
+}
+
+Vision:{
+    Provider Name: United Healthcare Vision
+    Provider Phone Number: (800)638-3120
+    Provider Website: https://www.myuhcvision.com/ 
+}
