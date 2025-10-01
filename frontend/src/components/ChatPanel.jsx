@@ -33,11 +33,27 @@ export default function ChatPanel({ mode, title, description, endpoint }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [attachments, setAttachments] = useState([]);
   const endRef = useRef(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    setAttachments([]);
+  }, [mode]);
+
+  const handleAttachmentChange = event => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+    setAttachments(prev => [...prev, ...files]);
+    event.target.value = '';
+  };
+
+  const removeAttachment = index => {
+    setAttachments(prev => prev.filter((_, idx) => idx !== index));
+  };
 
   const sendMessage = async () => {
     const trimmed = input.trim();
@@ -61,14 +77,29 @@ export default function ChatPanel({ mode, title, description, endpoint }) {
         content,
       }));
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: null,
-          messages: payloadMessages,
-        }),
-      });
+      const payload = {
+        model: null,
+        messages: payloadMessages,
+      };
+
+      let response;
+
+      if (mode === 'general' && attachments.length > 0) {
+        const formData = new FormData();
+        formData.append('payload', JSON.stringify(payload));
+        attachments.forEach(file => formData.append('files', file));
+        response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          body: formData,
+          headers: { Accept: 'application/json' },
+        });
+      } else {
+        response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!response.ok) {
         const detail = await response.json().catch(() => ({}));
@@ -85,6 +116,9 @@ export default function ChatPanel({ mode, title, description, endpoint }) {
       };
 
       setMessages(current => [...current, assistantMsg]);
+      if (mode === 'general') {
+        setAttachments([]);
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || 'Something went wrong');
@@ -171,6 +205,38 @@ export default function ChatPanel({ mode, title, description, endpoint }) {
           {loading ? 'Sending...' : 'Send'}
         </button>
       </div>
+
+      {mode === 'general' && (
+        <div className="mt-3 space-y-2">
+          <label className="block text-sm font-medium text-slate-600">
+            Attach reference files (optional)
+            <input
+              type="file"
+              multiple
+              accept=".txt,.md,.pdf,.docx"
+              onChange={handleAttachmentChange}
+              className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-slate-50 file:px-3 file:py-1 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-100"
+              disabled={loading}
+            />
+          </label>
+          {attachments.length > 0 && (
+            <ul className="space-y-1 text-sm text-slate-600">
+              {attachments.map((file, idx) => (
+                <li key={`${file.name}-${file.lastModified}-${idx}`} className="flex items-center justify-between rounded-md bg-slate-100 px-3 py-1">
+                  <span className="truncate pr-3">{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(idx)}
+                    className="text-xs font-semibold text-red-500 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
