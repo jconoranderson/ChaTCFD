@@ -6,6 +6,7 @@ from typing import List, Optional
 
 import docx
 import fitz  # PyMuPDF
+from docx.oxml.ns import qn
 
 from .providers import ModelProvider
 from .rag import RAGStore
@@ -135,4 +136,35 @@ class BIPService:
     def _extract_docx(content: bytes) -> str:
         file_like = io.BytesIO(content)
         document = docx.Document(file_like)
-        return "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text)
+        lines: List[str] = []
+
+        def extract_paragraph(paragraph: docx.text.paragraph.Paragraph) -> str:
+            if paragraph.runs:
+                bits = []
+                for run in paragraph.runs:
+                    text = run.text
+                    if text:
+                        bits.append(text)
+                combined = "".join(bits)
+                if combined:
+                    return combined
+            return paragraph.text
+
+        for paragraph in document.paragraphs:
+            text = extract_paragraph(paragraph).strip()
+            if text:
+                lines.append(text)
+
+        for table in document.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell_lines = []
+                    for paragraph in cell.paragraphs:
+                        text = extract_paragraph(paragraph).strip()
+                        if text:
+                            cell_lines.append(text)
+                    text = " ".join(cell_lines)
+                    if text:
+                        lines.append(text)
+
+        return "\n".join(lines)

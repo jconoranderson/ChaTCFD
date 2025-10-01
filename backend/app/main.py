@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import List
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from .bip import BIPService
 from .guardrails import apply_guardrails
@@ -20,6 +24,26 @@ from .settings import Settings, get_settings
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
+
+GENERIC_PROMPT_WORDS = {
+    "summarize",
+    "summarise",
+    "summary",
+    "explain",
+    "describe",
+    "help",
+    "detail",
+    "details",
+    "this",
+    "that",
+    "information",
+    "info",
+    "please",
+    "expand",
+    "clarify",
+    "give",
+    "tell",
+}
 
 app = FastAPI(title="ChaTCFD Complete", version="0.1.0")
 
@@ -77,9 +101,59 @@ def _format_sources(nodes) -> List[SourceDocument]:
 
 
 @app.post("/chat/general", response_model=ChatResponse)
-def general_chat(
-    request: ChatRequest,
+async def general_chat(
+    req: Request,
 ):
+
+    attachments: List[dict[str, str]] = []
+
+    if "multipart/form-data" in (req.headers.get("content-type") or "").lower():
+        form = await req.form()
+        payload_raw = form.get("payload")
+        if payload_raw is None:
+            raise HTTPException(status_code=400, detail="Missing payload field")
+        try:
+            data = json.loads(payload_raw)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
+
+        files = form.getlist("files")
+        _logger.info("Form keys: %s", list(form.keys()))
+        _logger.info("Received %d raw file objects", len(files))
+        for file_obj in files:
+            if not isinstance(file_obj, (UploadFile, StarletteUploadFile)):
+                _logger.info("Skipping unexpected file object type: %s", type(file_obj))
+                continue
+            _logger.info("Processing attachment: %s (%s)", file_obj.filename, type(file_obj))
+            try:
+                contents = await file_obj.read()
+            except Exception:
+                continue
+            if not contents:
+                _logger.warning("Attachment %s was empty", file_obj.filename)
+                continue
+            text = BIPService.extract_text_from_upload(file_obj.filename, contents)
+            _logger.info("Attachment %s extracted length %s", file_obj.filename, len(text or ""))
+            if not text:
+                _logger.warning("Attachment %s could not be parsed", file_obj.filename)
+                continue
+            attachments.append(
+                {
+                    "name": file_obj.filename,
+                    "content": text.strip(),
+                }
+            )
+        _logger.info("Received %s attachments with parsed content", len(attachments))
+    else:
+        try:
+            data = await req.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+
+    try:
+        request = ChatRequest(**data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
 
     if not request.messages:
         raise HTTPException(status_code=400, detail="messages cannot be empty")
@@ -88,40 +162,84 @@ def general_chat(
     if last_user is None:
         raise HTTPException(status_code=400, detail="at least one user message is required")
 
-    nodes = []
+    nodes: List = []
     system_messages: List[dict[str, str]] = []
-    similarity_floor = 0.55
-    try:
-        raw_nodes = rag_store.retrieve("general", last_user.content)
-        nodes = [n for n in raw_nodes if getattr(n, "score", 0) >= similarity_floor]
-        if not nodes and raw_nodes:
-            nodes = raw_nodes[:2]
-        if nodes:
-            cite_block_lines = []
-            for idx, node in enumerate(nodes, start=1):
-                source_name = node.node.metadata.get('source', 'unknown')
-                content = node.node.get_content().strip()
-                snippet = content if len(content) <= 1200 else content[:1200] + "…"
-                cite_block_lines.append(f"[{idx}] {source_name}: {snippet}")
-            cite_block = "\n".join(cite_block_lines)
-            system_messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        "You are ChaTCFD, an assistant for The Center for Discovery staff. Prefer the following internal references when they address the question, and cite them inline."
-                        " When the excerpts describe frameworks (e.g., the Centerwide 4 C's or SynergE6), explicitly list every component mentioned and summarise each using the provided wording."
-                        " Do not omit any bullet or numbered item that appears in the excerpts."
-                        " If the user asks for application, coaching, or next steps, combine the referenced material with safe, evidence-informed autism support practices rather than declining."
-                        " When you mention an organisation, resource, or programme, include its official website URL using Markdown link format (e.g., [Autism Society](https://autismsociety.org))."
-                        " Only reply 'I couldn't find that in the documentation' when no relevant information and no responsible guidance can be given.\n"
-                        f"{cite_block}\n--- end references ---"
-                    ),
-                }
-            )
-        else:
+
+    meaningful_tokens = [
+        token
+        for token in re.findall(r"[a-zA-Z0-9]+", last_user.content.lower())
+        if len(token) >= 4 and token not in GENERIC_PROMPT_WORDS
+    ]
+
+    prompt_lower = last_user.content.lower()
+    wants_summary = bool(re.search(r"summari[sz]e|summary", prompt_lower))
+    refers_to_this = "this" in prompt_lower or "that" in prompt_lower
+
+    if attachments:
+        attachment_lines = []
+        for attachment in attachments:
+            snippet = attachment["content"] if len(attachment["content"]) <= 1200 else attachment["content"][:1200] + "…"
+            attachment_lines.append(f"[Attachment: {attachment['name']}] {snippet}")
+        attachment_block = "\n".join(attachment_lines)
+        system_messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "The user provided the following reference documents. Treat them as primary context."
+                    " Summarise, paraphrase, or extract from these attachments exactly as requested."
+                    " Only fall back to other knowledge if the attachments lack the necessary details.\n"
+                    f"{attachment_block}"
+                ),
+            }
+        )
+    elif meaningful_tokens:
+        similarity_floor = 0.55
+        try:
+            raw_nodes = rag_store.retrieve("general", last_user.content)
+            nodes = [n for n in raw_nodes if getattr(n, "score", 0) >= similarity_floor]
+            if not nodes and raw_nodes:
+                nodes = raw_nodes[:2]
+            if nodes:
+                cite_block_lines = []
+                for idx, node in enumerate(nodes, start=1):
+                    source_name = node.node.metadata.get("source", "unknown")
+                    content = node.node.get_content().strip()
+                    snippet = content if len(content) <= 1200 else content[:1200] + "…"
+                    cite_block_lines.append(f"[{idx}] {source_name}: {snippet}")
+                cite_block = "\n".join(cite_block_lines)
+                system_messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are ChaTCFD, an assistant for The Center for Discovery staff. Prefer the following internal references when they address the question, and cite them inline."
+                            " When the excerpts describe frameworks (e.g., the Centerwide 4 C's or SynergE6), explicitly list every component mentioned and summarise each using the provided wording."
+                            " Do not omit any bullet or numbered item that appears in the excerpts."
+                            " If the user asks for application, coaching, or next steps, combine the referenced material with safe, evidence-informed autism support practices rather than declining."
+                            " When you mention an organisation, resource, or programme, include its official website URL using Markdown link format (e.g., [Autism Society](https://autismsociety.org))."
+                            " Only reply 'I couldn't find that in the documentation' when no relevant information and no responsible guidance can be given.\n"
+                            f"{cite_block}\n--- end references ---"
+                        ),
+                    }
+                )
+        except CorpusNotReady:
             nodes = []
-    except CorpusNotReady:
-        nodes = []
+    else:
+        if wants_summary and refers_to_this:
+            return ChatResponse(
+                response=(
+                    "I can summarise an attachment or a specific policy. Upload the file you’d like summarised, "
+                    "or mention the topic/document name, and I’ll take it from there."
+                ),
+                sources=[],
+                mode="general",
+            )
+        return ChatResponse(
+            response=(
+                "I’m not sure what to summarise yet. Please mention a specific topic or attach a file, and I’ll help right away."
+            ),
+            sources=[],
+            mode="general",
+        )
 
     payload = system_messages + _prepare_payload(request.messages)
 
